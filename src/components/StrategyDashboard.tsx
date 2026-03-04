@@ -1,19 +1,12 @@
 import React, { useState } from 'react';
-import { GoogleGenAI } from '@google/genai';
-
-// Lazy initialization for Gemini API
-const getAI = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn("GEMINI_API_KEY is missing");
-    return null;
-  }
-  return new GoogleGenAI({ apiKey });
-};
+import { getAI, saveAIHistory } from '../services/aiService';
+import { getUIText } from '../i18n/uiTexts';
+import { Copy, Download, Check } from 'lucide-react';
 
 interface StrategyDashboardProps {
   isOpen: boolean;
   onClose: () => void;
+  lang?: string;
 }
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -23,7 +16,8 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
   </div>
 );
 
-export default function StrategyDashboard({ isOpen, onClose }: StrategyDashboardProps) {
+export default function StrategyDashboard({ isOpen, onClose, lang = 'KO' }: StrategyDashboardProps) {
+  const t = (key: string) => getUIText(lang, key);
   if (!isOpen) return null;
 
   const [librarianQuery, setLibrarianQuery] = useState('');
@@ -32,6 +26,8 @@ export default function StrategyDashboard({ isOpen, onClose }: StrategyDashboard
   const [originalContent, setOriginalContent] = useState('');
   const [transformedContent, setTransformedContent] = useState('');
   const [isTransforming, setIsTransforming] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [librarianCopied, setLibrarianCopied] = useState(false);
 
   const handleLibrarianSearch = async () => {
     if (!librarianQuery) return;
@@ -40,12 +36,12 @@ export default function StrategyDashboard({ isOpen, onClose }: StrategyDashboard
 
     const ai = getAI();
     if (!ai) {
-      setLibrarianResult("API Key가 설정되지 않았습니다.");
+      setLibrarianResult("API Key가 설정되지 않았습니다. [관리자 > API Key 관리]에서 등록해주세요.");
       setIsLoadingLibrarian(false);
       return;
     }
 
-    const prompt = `당신은 '도서관 사서' 페르소나입니다. 다음 키워드/상담 내용과 관련하여, 7단계 글쓰기 프레임워크의 '배경 확장' 단계에 사용할 수 있는 흥미로운 역사, 과학, 심리학적 사실이나 일화를 3가지 추천해주세요. 각 항목은 출처(웹 검색 기반)와 함께 간결하게 요약해주세요.\n\n키워드: "${librarianQuery}"`;
+    const prompt = `You are a 'Librarian' persona. Regarding the following keywords/consultation content, recommend 3 interesting historical, scientific, or psychological facts or anecdotes that can be used in the 'Background Expansion' stage of the 7-step writing framework. Please summarize each item concisely with its source (based on web search). Please write the answer in ${lang} language.\n\nKeywords: "${librarianQuery}"`;
 
     try {
       const response = await ai.models.generateContent({
@@ -55,7 +51,15 @@ export default function StrategyDashboard({ isOpen, onClose }: StrategyDashboard
           tools: [{ googleSearch: {} }],
         },
       });
-      setLibrarianResult(response.text || "검색 결과가 없습니다.");
+      const text = response.text || "검색 결과가 없습니다.";
+      setLibrarianResult(text);
+      
+      saveAIHistory({
+        type: 'strategy',
+        title: `${t('strategyLibrarianButton')} - ${librarianQuery}`,
+        query: librarianQuery,
+        response: text
+      });
     } catch (error) {
       console.error("Librarian Persona API error:", error);
       setLibrarianResult("자료 검색 중 오류가 발생했습니다.");
@@ -74,7 +78,7 @@ export default function StrategyDashboard({ isOpen, onClose }: StrategyDashboard
 
     const ai = getAI();
     if (!ai) {
-      setTransformedContent("API Key가 설정되지 않았습니다.");
+      setTransformedContent("API Key가 설정되지 않았습니다. [관리자 > API Key 관리]에서 등록해주세요.");
       setIsTransforming(false);
       return;
     }
@@ -92,11 +96,19 @@ export default function StrategyDashboard({ isOpen, onClose }: StrategyDashboard
         break;
     }
 
-    const prompt = `다음 원본 콘텐츠를 '${platform}' 플랫폼에 최적화된 형태로 변환해줘. 다음 지시사항을 따라줘: ${platformInstruction}\n\n---원본 콘텐츠---\n${originalContent}`;
+    const prompt = `Please transform the following original content into a form optimized for the '${platform}' platform. Please follow these instructions: ${platformInstruction}. Please write the answer in ${lang} language.\n\n---Original Content---\n${originalContent}`;
 
     try {
       const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: [{ parts: [{ text: prompt }] }] });
-      setTransformedContent(response.text || "변환 결과를 생성할 수 없습니다.");
+      const text = response.text || "변환 결과를 생성할 수 없습니다.";
+      setTransformedContent(text);
+      
+      saveAIHistory({
+        type: 'strategy',
+        title: `Content Transform (${platform})`,
+        query: originalContent.slice(0, 50) + '...',
+        response: text
+      });
     } catch (error) {
       console.error("Content transformation API error:", error);
       setTransformedContent("콘텐츠 변환 중 오류가 발생했습니다.");
@@ -105,72 +117,144 @@ export default function StrategyDashboard({ isOpen, onClose }: StrategyDashboard
     }
   };
 
+  const handleCopy = () => {
+    if (!transformedContent) return;
+    navigator.clipboard.writeText(transformedContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleLibrarianCopy = () => {
+    if (!librarianResult) return;
+    navigator.clipboard.writeText(librarianResult);
+    setLibrarianCopied(true);
+    setTimeout(() => setLibrarianCopied(false), 2000);
+  };
+
+  const handleDownload = () => {
+    if (!transformedContent) return;
+    const element = document.createElement("a");
+    const file = new Blob([transformedContent], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = "transformed_content.txt";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col p-8">
+    <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center animate-fade-in p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col p-6 md:p-8">
         <div className="flex justify-between items-center border-b pb-4 mb-6">
-          <h2 className="text-2xl font-bold serif text-[#5D6D5F]">콘텐츠 전략 대시보드</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-800 transition-colors">닫기</button>
+          <h2 className="text-xl md:text-2xl font-bold serif text-[#5D6D5F]">{t('strategyTitle')}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-800 transition-colors">{t('strategyClose')}</button>
         </div>
-        <div className="flex-grow overflow-y-auto pr-4">
-          <Section title="(1) 핵심 가치 및 스타일 가이드">
-            <p><strong>핵심 메시지:</strong> 성경적 지혜를 현대적인 삶에 적용하여 긍정적이고 보편적인 공감대를 형성한다.</p>
-            <p><strong>어조 및 표현법:</strong> 비신앙인도 거부감 없이 받아들일 수 있는 긍정적이고 따뜻한 언어 사용. 특수기호, 불필요한 수식어 배제. 순수 텍스트와 논리적 전개에 집중.</p>
-            <p><strong>콘텐츠 목표:</strong> 독자의 삶에 실질적인 변화를 유도하는 깊이 있는 통찰력 제공.</p>
+        <div className="flex-grow overflow-y-auto pr-2 md:pr-4">
+          <Section title={t('strategySection1')}>
+            <p><strong>{t('strategyCoreMessage').split(':')[0]}:</strong>{t('strategyCoreMessage').split(':')[1]}</p>
+            <p><strong>{t('strategyTone').split(':')[0]}:</strong>{t('strategyTone').split(':')[1]}</p>
+            <p><strong>{t('strategyGoal').split(':')[0]}:</strong>{t('strategyGoal').split(':')[1]}</p>
           </Section>
 
-          <Section title="(2) 7단계 글쓰기 프레임워크">
-            <p><strong>1단계 (Hooking):</strong> 흥미로운 질문이나 일화로 독자의 시선 끌기</p>
-            <p><strong>2단계 (일상 공감):</strong> 현대인의 일상과 연결되는 보편적인 문제 제시</p>
-            <p><strong>3단계 (배경 확장):</strong> 역사, 과학, 심리학 등 외부 자료를 융합하여 문제의 다각적 분석</p>
-            <p><strong>4단계 (극복 사례):</strong> 구체적인 인물이나 사건을 통해 문제 해결 과정 제시</p>
-            <p><strong>5단계 (성경적 원리):</strong> 잠언의 핵심 원리를 보편적 가치로 재해석하여 연결</p>
-            <p><strong>6단계 (사유 질문):</strong> 독자 스스로 생각하고 삶에 적용할 수 있는 질문 던지기</p>
-            <p><strong>7단계 (마무리):</strong> 긍정적인 격려와 실천적 조언으로 마무리</p>
+          <Section title={t('strategySection2')}>
+            <p>{t('strategyStep1')}</p>
+            <p>{t('strategyStep2')}</p>
+            <p>{t('strategyStep3')}</p>
+            <p>{t('strategyStep4')}</p>
+            <p>{t('strategyStep5')}</p>
+            <p>{t('strategyStep6')}</p>
+            <p>{t('strategyStep7')}</p>
           </Section>
 
-          <Section title="(3) '도서관 사서' 페르소나 (자료 검색)">
-            <div className="flex gap-2 mb-4">
+          <Section title={t('strategySection3')}>
+            <div className="flex flex-col md:flex-row gap-2 mb-4">
               <input 
                 type="text"
                 value={librarianQuery}
                 onChange={(e) => setLibrarianQuery(e.target.value)}
-                placeholder="키워드 입력 (예: 용서, 불안, 관계)"
-                className="flex-grow px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-[#5D6D5F] outline-none"
+                placeholder={t('strategyLibrarianPlaceholder')}
+                className="flex-grow px-3 py-3 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-[#5D6D5F] outline-none"
               />
               <button 
                 onClick={handleLibrarianSearch}
                 disabled={isLoadingLibrarian}
-                className="bg-[#5D6D5F] text-white px-4 py-2 rounded-md font-bold text-sm hover:bg-[#4a574c] transition-all disabled:opacity-50 flex items-center"
+                className="bg-[#5D6D5F] text-white px-6 py-3 rounded-md font-bold text-sm hover:bg-[#4a574c] transition-all disabled:opacity-50 flex items-center justify-center whitespace-nowrap"
               >
-                {isLoadingLibrarian ? '검색 중...' : '자료 검색'}
+                {isLoadingLibrarian ? t('strategyLibrarianSearching') : t('strategyLibrarianButton')}
               </button>
             </div>
             {librarianResult && (
-              <div className="p-4 bg-white rounded border whitespace-pre-wrap">{librarianResult}</div>
+              <div className="relative">
+                <div className="p-4 bg-white rounded border whitespace-pre-wrap max-h-60 overflow-y-auto pr-10">{librarianResult}</div>
+                <button 
+                  onClick={handleLibrarianCopy} 
+                  className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-[#5D6D5F] hover:bg-gray-100 rounded transition-colors bg-white border border-gray-200 shadow-sm"
+                  title="Copy"
+                >
+                  {librarianCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+                </button>
+              </div>
             )}
           </Section>
 
-          <Section title="(4) 원클릭 콘텐츠 변환">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="font-bold text-xs mb-2 block">원본 콘텐츠 입력:</label>
+          <Section title={t('strategySection4')}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex flex-col">
+                <label className="font-bold text-sm mb-2 block">{t('strategyOriginalLabel')}</label>
                 <textarea 
                   value={originalContent}
                   onChange={(e) => setOriginalContent(e.target.value)}
-                  placeholder="10,000자 원본 콘텐츠를 여기에 붙여넣으세요..."
-                  className="w-full h-48 p-3 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-[#5D6D5F] outline-none"
+                  placeholder={t('strategyOriginalPlaceholder')}
+                  className="w-full h-80 p-4 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5D6D5F] outline-none resize-none shadow-sm"
                 />
               </div>
-              <div>
-                <label className="font-bold text-xs mb-2 block">변환 결과:</label>
-                <div className="w-full h-48 p-3 text-sm bg-white rounded border whitespace-pre-wrap overflow-y-auto">{transformedContent || "플랫폼을 선택하여 변환하세요."}</div>
+              <div className="flex flex-col">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="font-bold text-sm block">{t('strategyResultLabel')}</label>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={handleCopy} 
+                      className="p-1.5 text-gray-500 hover:text-[#5D6D5F] hover:bg-gray-100 rounded transition-colors" 
+                      title="Copy"
+                    >
+                      {copied ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
+                    </button>
+                    <button 
+                      onClick={handleDownload} 
+                      className="p-1.5 text-gray-500 hover:text-[#5D6D5F] hover:bg-gray-100 rounded transition-colors" 
+                      title="Download"
+                    >
+                      <Download size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="w-full h-80 p-4 text-sm bg-white rounded-lg border border-gray-200 whitespace-pre-wrap overflow-y-auto shadow-sm">
+                  {transformedContent || <span className="text-gray-400 italic">{t('strategyResultPlaceholder')}</span>}
+                </div>
               </div>
             </div>
-            <div className="flex justify-center gap-2 mt-4">
-              <button onClick={() => handleTransform('youtube')} className="bg-red-600 text-white px-4 py-2 text-xs rounded-md hover:bg-red-700">유튜브 스크립트</button>
-              <button onClick={() => handleTransform('newsletter')} className="bg-blue-600 text-white px-4 py-2 text-xs rounded-md hover:bg-blue-700">뉴스레터</button>
-              <button onClick={() => handleTransform('instagram')} className="bg-purple-600 text-white px-4 py-2 text-xs rounded-md hover:bg-purple-700">인스타그램</button>
+            <div className="flex flex-wrap justify-center gap-3 mt-6">
+              <button 
+                onClick={() => handleTransform('youtube')} 
+                disabled={isTransforming}
+                className="bg-red-600 text-white px-5 py-2.5 text-sm font-bold rounded-lg hover:bg-red-700 transition-colors shadow-sm disabled:opacity-50"
+              >
+                {t('strategyYoutube')}
+              </button>
+              <button 
+                onClick={() => handleTransform('newsletter')} 
+                disabled={isTransforming}
+                className="bg-blue-600 text-white px-5 py-2.5 text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
+              >
+                {t('strategyNewsletter')}
+              </button>
+              <button 
+                onClick={() => handleTransform('instagram')} 
+                disabled={isTransforming}
+                className="bg-purple-600 text-white px-5 py-2.5 text-sm font-bold rounded-lg hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-50"
+              >
+                {t('strategyInstagram')}
+              </button>
             </div>
           </Section>
         </div>

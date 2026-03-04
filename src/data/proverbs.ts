@@ -10,10 +10,32 @@ export interface ProverbData {
   chartType: 'radar' | 'bar' | 'none';
   accentColor: string;
   tag: string;
+  merged?: string | { title?: string; body?: string }; // ✅ 통합 데이터 구조 추가
   simulation?: 'mountaineer';
+  translations?: any;
+  partner?: string; // ✅ 대화 상대/친구
+  categoryCode?: string; // ✅ 콘텐츠 분류 코드 (예: C01_연애/집착_D03)
+  audio?: Record<string, string>; // ✅ 언어별 오디오 URL (KO, EN, JP, CN, ES, DE, HI) - Preview URL
+  audio_direct?: Record<string, string>; // ✅ 다운로드용 Direct URL
+  audioFileIds?: Record<string, string>; // ✅ 로컬 캐시 키용 File ID
 }
 
 export const proverbs: Record<string, ProverbData> = {
+  '8:28': {
+    id: 'rom8_28',
+    reference: 'Romans 8:28',
+    title: '합력하여 선을 이루느니라',
+    verse: '우리가 알거니와 하나님을 사랑하는 자 곧 그 뜻대로 부르심을 입은 자들에게는 모든 것이 합력하여 선을 이루느니라',
+    source: '로마서 8:28',
+    theme: '하나님의 섭리',
+    commentary: '하나님은 우리의 모든 상황, 심지어 고난과 실수까지도 사용하여 선을 이루십니다. 이것은 하나님을 사랑하고 그분의 뜻을 따르는 자들에게 주시는 놀라운 약속입니다.',
+    application: '지금 당신이 겪고 있는 어려움이 어떻게 선으로 바뀔 수 있을지 기대하십니까?',
+    chartType: 'radar',
+    accentColor: '#5D6D5F',
+    tag: 'SPECIAL',
+    partner: '이설 친구',
+    categoryCode: 'C01_연애/집착_D03',
+  },
   '1:1-2': {
     id: 'jan1',
     reference: 'Proverbs 1:1-2',
@@ -26,6 +48,92 @@ export const proverbs: Record<string, ProverbData> = {
     chartType: 'radar',
     accentColor: '#D4A373',
     tag: 'JANUARY 1st',
+    translations: {
+      EN: {
+        merged: {
+          title: 'The Beginning of Wisdom and Instruction',
+          body: 'British poet Cowper said, "Knowledge is proud that he has learned so much; Wisdom is humble that he knows no more." Knowledge, a simple listing of information, makes us arrogant, but Wisdom, guided by God, leads us to humility.'
+        },
+        devotion: {
+          title: 'The Beginning of Wisdom and Instruction',
+          body: 'British poet Cowper said, "Knowledge is proud that he has learned so much; Wisdom is humble that he knows no more." Knowledge, a simple listing of information, makes us arrogant, but Wisdom, guided by God, leads us to humility.'
+        },
+        verse: 'The proverbs of Solomon son of David, king of Israel: for gaining wisdom and instruction; for understanding words of insight;',
+        source: 'Proverbs 1:1-2',
+        theme: 'Knowledge vs Wisdom',
+        application: 'What are you preparing for God to gain wisdom rather than knowledge?'
+      },
+      JP: {
+        merged: {
+          title: '知恵と訓戒の始まり',
+          body: '英国の詩人クーパーは、「知識は博識を誇るが、知恵は自らの無知を恥じる」と言いました。単なる情報の羅列である「知識」は私たちを傲慢にしますが、神の導きを受ける「知恵」は私たちを謙遜の場へと導きます。'
+        },
+        devotion: {
+          title: '知恵と訓戒の始まり',
+          body: '英国の詩人クーパーは、「知識は博識を誇るが、知恵は自らの無知を恥じる」と言いました。単なる情報の羅列である「知識」は私たちを傲慢にしますが、神の導きを受ける「知恵」は私たちを謙遜の場へと導きます。'
+        },
+        verse: 'ダビデの子、イスラエルの王ソロモンの箴言。これは知恵と訓戒を学び、悟りの言葉を理解させるため、',
+        source: '箴言 1:1-2',
+        theme: '知識 vs 知恵',
+        application: '知識よりも知恵を得るために、あなたは神に何を準備していますか？'
+      },
+      CN: {
+        merged: {
+          title: '智慧与训诲的开端',
+          body: '英国诗人库珀曾说：“知识夸耀自己的博学，智慧却为自己的无知感到羞愧。” 单纯的信息罗列“知识”会让我们骄傲，但受神引导的“智慧”会带领我们进入谦卑。'
+        },
+        devotion: {
+          title: '智慧与训诲的开端',
+          body: '英国诗人库珀曾说：“知识夸耀自己的博学，智慧却为自己的无知感到羞愧。” 单纯的信息罗列“知识”会让我们骄傲，但受神引导的“智慧”会带领我们进入谦卑。'
+        },
+        verse: '以色列王大卫儿子所罗门的箴言：要使人晓得智慧和训诲，分辨通达的言语，',
+        source: '箴言 1:1-2',
+        theme: '知识 vs 智慧',
+        application: '为了获得智慧而非知识，你正在为神准备什么？'
+      },
+      ES: {
+        merged: {
+          title: 'El Principio de la Sabiduría y la Instrucción',
+          body: 'El poeta británico Cowper dijo: "El conocimiento está orgulloso de haber aprendido tanto; la sabiduría es humilde porque no sabe más". El conocimiento, una simple lista de información, nos hace arrogantes, pero la sabiduría, guiada por Dios, nos lleva a la humildad.'
+        },
+        devotion: {
+          title: 'El Principio de la Sabiduría y la Instrucción',
+          body: 'El poeta británico Cowper dijo: "El conocimiento está orgulloso de haber aprendido tanto; la sabiduría es humilde porque no sabe más". El conocimiento, una simple lista de información, nos hace arrogantes, pero la sabiduría, guiada por Dios, nos lleva a la humildad.'
+        },
+        verse: 'Los proverbios de Salomón, hijo de David, rey de Israel: para conocer sabiduría e instrucción, para discernir palabras de inteligencia,',
+        source: 'Proverbios 1:1-2',
+        theme: 'Conocimiento vs Sabiduría',
+        application: '¿Qué estás preparando para Dios para ganar sabiduría en lugar de conocimiento?'
+      },
+      DE: {
+        merged: {
+          title: 'Der Anfang von Weisheit und Unterweisung',
+          body: 'Der britische Dichter Cowper sagte: "Wissen ist stolz darauf, so viel gelernt zu haben; Weisheit ist demütig, dass sie nicht mehr weiß." Wissen, eine einfache Auflistung von Informationen, macht uns arrogant, aber Weisheit, die von Gott geleitet wird, führt uns zur Demut.'
+        },
+        devotion: {
+          title: 'Der Anfang von Weisheit und Unterweisung',
+          body: 'Der britische Dichter Cowper sagte: "Wissen ist stolz darauf, so viel gelernt zu haben; Weisheit ist demütig, dass sie nicht mehr weiß." Wissen, eine einfache Auflistung von Informationen, macht uns arrogant, aber Weisheit, die von Gott geleitet wird, führt uns zur Demut.'
+        },
+        verse: 'Sprüche Salomos, des Sohnes Davids, des Königs von Israel, um Weisheit und Zucht zu erkennen, um verständige Worte zu verstehen,',
+        source: 'Sprüche 1:1-2',
+        theme: 'Wissen vs Weisheit',
+        application: 'Was bereiten Sie für Gott vor, um Weisheit statt Wissen zu erlangen?'
+      },
+      HI: {
+        merged: {
+          title: 'बुद्धि और निर्देश की शुरुआत',
+          body: 'ब्रिटिश कवि काउपर ने कहा, "ज्ञान को गर्व है कि उसने इतना कुछ सीखा है; बुद्धि विनम्र है कि वह और नहीं जानती।" ज्ञान, जानकारी की एक सरल सूची, हमें अभिमानी बनाती है, लेकिन बुद्धि, जो ईश्वर द्वारा निर्देशित है, हमें विनम्रता की ओर ले जाती है।'
+        },
+        devotion: {
+          title: 'बुद्धि और निर्देश की शुरुआत',
+          body: 'ब्रिटिश कवि काउपर ने कहा, "ज्ञान को गर्व है कि उसने इतना कुछ सीखा है; बुद्धि विनम्र है कि वह और नहीं जानती।" ज्ञान, जानकारी की एक सरल सूची, हमें अभिमानी बनाती है, लेकिन बुद्धि, जो ईश्वर द्वारा निर्देशित है, हमें विनम्रता की ओर ले जाती है।'
+        },
+        verse: 'दाऊद के पुत्र, इज़राइल के राजा सुलैमान के नीतिवचन: बुद्धि और शिक्षा प्राप्त करने के लिए; समझ की बातें समझने के लिए;',
+        source: 'नीतिवचन 1:1-2',
+        theme: 'ज्ञान बनाम बुद्धि',
+        application: 'ज्ञान के बजाय बुद्धि प्राप्त करने के लिए आप ईश्वर के लिए क्या तैयारी कर रहे हैं?'
+      }
+    }
   },
   '1:3': {
     id: 'jan2',
