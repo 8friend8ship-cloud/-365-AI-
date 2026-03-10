@@ -48,6 +48,9 @@ export type EngineResponseData = {
     KO_MUKSANG?: string;
     KO_GEONJO?: string;
   };
+  audioFileIds?: Partial<Record<EngineLangKey, string>>;
+  audioJson?: Partial<Record<EngineLangKey, string>>;
+  audioWebApp?: Partial<Record<EngineLangKey, string>>;
   translations?: Partial<Record<EngineLangKey, EngineLangBlock>>;
   langs?: Partial<Record<EngineLangKey, EngineLangBlock>>;
   AUDIO_CREATED_AT?: string;

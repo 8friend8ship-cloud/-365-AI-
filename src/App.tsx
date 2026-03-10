@@ -21,6 +21,7 @@ import AILab from './components/AILab';
 import ProverbList from './components/ProverbList';
 import StrategyDashboard from './components/StrategyDashboard';
 import AdminDashboard from './components/AdminDashboard';
+import DialogModal from './components/DialogModal';
 import { proverbs as initialProverbs, defaultVerse, ProverbData } from './data/proverbs';
 import { getUIText } from './i18n/uiTexts';
 
@@ -47,7 +48,9 @@ function toDirectAudioUrl(urlOrId: string, webAppUrl?: string, token?: string, s
 
     if (id) {
       // Apps Script proxy for audio is not supported, fallback to direct Google Drive URL
-      return `https://drive.google.com/uc?export=download&id=${id}`;
+      // iframe 내에서 drive.google.com의 리다이렉트가 차단되는 문제를 해결하기 위해
+      // 직접 drive.usercontent.google.com 다운로드 링크를 사용합니다.
+      return `https://drive.usercontent.google.com/download?id=${id}&export=download&authuser=0&confirm=t`;
     }
 
     // 2. 이미 GAS URL인 경우 토큰과 시트 ID 확인 및 추가 (이 부분도 직접 드라이브 URL로 변환 시도)
@@ -55,11 +58,11 @@ function toDirectAudioUrl(urlOrId: string, webAppUrl?: string, token?: string, s
       const newUrl = new URL(urlOrId);
       if (newUrl.searchParams.has("fileId")) {
         const fileId = newUrl.searchParams.get("fileId");
-        if (fileId) return `https://drive.google.com/uc?export=download&id=${fileId}`;
+        if (fileId) return `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0&confirm=t`;
       }
       if (newUrl.searchParams.has("id")) {
         const fileId = newUrl.searchParams.get("id");
-        if (fileId) return `https://drive.google.com/uc?export=download&id=${fileId}`;
+        if (fileId) return `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0&confirm=t`;
       }
       // 만약 fileId가 없다면 원래 URL 반환
       return urlOrId;
@@ -71,9 +74,82 @@ function toDirectAudioUrl(urlOrId: string, webAppUrl?: string, token?: string, s
 }
 
 export default function App() {
-  const [searchQuery, setSearchQuery] = useState('1:1-2');
-  const [proverbsData, setProverbsData] = useState<Record<string, ProverbData>>(initialProverbs);
-  const [currentVerseData, setCurrentVerseData] = useState<ProverbData | null>(defaultVerse);
+  const [proverbsData, setProverbsData] = useState<Record<string, ProverbData>>(() => {
+    const saved = localStorage.getItem('proverbs_data');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Object.keys(parsed).length > 0) {
+        return parsed;
+      }
+    }
+    return initialProverbs;
+  });
+
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'alert' | 'confirm';
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'alert',
+    onConfirm: () => {},
+  });
+
+  const showAlert = (message: string, title = '알림') => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'alert',
+      onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false })),
+    });
+  };
+
+  const showConfirm = (message: string, onConfirm: () => void, title = '확인') => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'confirm',
+      onConfirm: () => {
+        setDialogConfig(prev => ({ ...prev, isOpen: false }));
+        onConfirm();
+      },
+      onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false })),
+    });
+  };
+
+  useEffect(() => {
+    localStorage.setItem('proverbs_data', JSON.stringify(proverbsData));
+  }, [proverbsData]);
+
+  // Calculate today's verse based on day of the year
+  const getTodayVerse = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), 0, 0);
+    const diff = (now.getTime() - start.getTime()) + ((start.getTimezoneOffset() - now.getTimezoneOffset()) * 60 * 1000);
+    const oneDay = 1000 * 60 * 60 * 24;
+    const dayOfYear = Math.floor(diff / oneDay);
+    
+    // Find the verse with id `day_${dayOfYear}`
+    const todayVerseKey = Object.keys(proverbsData).find(key => proverbsData[key].id === `day_${dayOfYear}`);
+    let todayVerse = todayVerseKey ? proverbsData[todayVerseKey] : defaultVerse;
+    
+    // If the today's verse is incomplete (e.g. dummy data), fallback to defaultVerse
+    if (!todayVerse.title || !todayVerse.commentary || todayVerse.verse.includes('말씀입니다.')) {
+      todayVerse = defaultVerse;
+    }
+    
+    return todayVerse;
+  };
+
+  const [currentVerseData, setCurrentVerseData] = useState<ProverbData | null>(getTodayVerse());
+  const [searchQuery, setSearchQuery] = useState(getTodayVerse()?.reference || 'Proverbs 1:1');
   const [error, setError] = useState<string | null>(null);
   const [isLabOpen, setIsLabOpen] = useState(false);
   const [isListOpen, setIsListOpen] = useState(false);
@@ -144,14 +220,31 @@ export default function App() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const query = searchQuery.trim();
-    const verse = proverbsData[query];
-    if (verse) {
-      setCurrentVerseData(verse);
+    const query = searchQuery.trim().toLowerCase();
+    
+    const foundKey = Object.keys(proverbsData).find(key => {
+      const p = proverbsData[key];
+      
+      // Skip incomplete dummy data (must have title, commentary, and not be a placeholder verse)
+      if (!p.title || !p.commentary || p.verse.includes('말씀입니다.')) return false;
+
+      // Check verse, reference, and tag only
+      const textToSearch = [
+        p.verse,
+        p.reference,
+        p.tag || '',
+        `#${p.tag || ''}` // Allow searching with hashtag
+      ].join(' ').toLowerCase();
+
+      return textToSearch.includes(query) || key.toLowerCase().includes(query);
+    });
+
+    if (foundKey) {
+      setCurrentVerseData(proverbsData[foundKey]);
       setError(null);
       setIsListOpen(false);
     } else {
-      setError(`'${query}'에 해당하는 잠언을 찾을 수 없습니다.`);
+      setError(`'${query}'에 해당하는 내용을 찾을 수 없습니다.`);
       setCurrentVerseData(null);
     }
   };
@@ -469,12 +562,14 @@ export default function App() {
   }, [engineData, appLang, WEBAPP_URL]);
 
   // ✅ 오디오 자가 치유 (Repair) 호출
+  const [hasAutoRepaired, setHasAutoRepaired] = useState<Record<string, boolean>>({});
+
   const repairAudio = async () => {
     const fileName = engineData?.AUDIO_FILE_NAME;
     const id = engineData?.id;
 
     if (!fileName) {
-      alert("⚠️ 복구할 파일명(AUDIO_FILE_NAME)이 시트에 없습니다. 먼저 음성을 생성해 주세요.");
+      showAlert("⚠️ 복구할 파일명(AUDIO_FILE_NAME)이 시트에 없습니다. 먼저 음성을 생성해 주세요.");
       return;
     }
 
@@ -516,14 +611,13 @@ export default function App() {
     try {
       const result = await jsonpPromise;
       if (result.success) {
-        alert("✅ 오디오 데이터 복구 성공! 데이터를 다시 불러옵니다.");
+        console.log("✅ 오디오 데이터 복구 성공! 데이터를 다시 불러옵니다.");
         callBibleEngine('today', true);
       } else {
         throw new Error(result.message || "파일을 찾을 수 없거나 업데이트에 실패했습니다.");
       }
     } catch (e: any) {
       console.error("❌ Repair Failed:", e.message);
-      alert(`❌ 복구 실패: ${e.message}`);
       setAudioStatus('error');
     }
   };
@@ -578,10 +672,10 @@ export default function App() {
 
     try {
       await jsonpPromise;
-      alert(`${appLang} 음성이 생성되었습니다. 다시 엔진을 불러와주세요.`);
+      showAlert(`${appLang} 음성이 생성되었습니다. 다시 엔진을 불러와주세요.`);
       callBibleEngine('today', true); // 데이터 갱신
     } catch (e: any) {
-      alert(e.message);
+      showAlert(e.message);
     } finally {
       setIsEngineLoading(false);
     }
@@ -599,25 +693,25 @@ export default function App() {
               </span>
             </div>
 
-            <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button
                 onClick={() => setIsListOpen(!isListOpen)}
-                className="px-4 py-1.5 text-sm font-medium text-gray-600 hover:text-black transition-colors"
+                className="px-2 py-1.5 text-xs font-medium text-gray-600 hover:text-black transition-colors"
               >
                 {t('allList')}
               </button>
 
-              <form onSubmit={handleSearch} className="flex items-center gap-2">
+              <form onSubmit={handleSearch} className="flex items-center gap-1">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={t('searchPlaceholder')}
-                  className="px-3 py-1.5 text-sm border border-gray-200 rounded-full w-28 focus:ring-2 focus:ring-[#5D6D5F] outline-none"
+                  className="px-2 py-1.5 text-xs border border-gray-200 rounded-full w-20 md:w-28 focus:ring-2 focus:ring-[#5D6D5F] outline-none"
                 />
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-gray-100 text-sm font-medium rounded-full hover:bg-gray-200 transition-colors"
+                  className="px-2 py-1.5 bg-gray-100 text-xs font-medium rounded-full hover:bg-gray-200 transition-colors"
                 >
                   {t('searchButton')}
                 </button>
@@ -628,81 +722,77 @@ export default function App() {
               {/* ✅ 새로고침 버튼 */}
               <button
                 onClick={() => callBibleEngine('today', true)}
-                className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-600"
-                title="새로고침 (최신 데이터 불러오기)"
+                className="p-1.5 rounded-full hover:bg-gray-100 transition-colors text-gray-600"
+                title="새로고침"
               >
-                <RefreshCw size={18} className={isEngineLoading ? "animate-spin" : ""} />
+                <RefreshCw size={16} className={isEngineLoading ? "animate-spin" : ""} />
               </button>
 
               {/* ✅ 앱 전역 언어 선택기 */}
               <select
                 value={appLang}
                 onChange={(e) => setAppLang(e.target.value as EngineLangKey)}
-                className="text-xs border border-gray-200 rounded-full px-2 py-1 outline-none bg-white"
+                className="text-[10px] border border-gray-200 rounded-full px-1 py-1 outline-none bg-white w-12"
               >
-                <option value="KO">KO 한국어</option>
-                <option value="EN">EN English</option>
-                <option value="JP">JP 日本語</option>
-                <option value="CN">CN 中文</option>
-                <option value="ES">ES Español</option>
-                <option value="DE">DE Deutsch</option>
-                <option value="HI">HI हिन्दी</option>
+                <option value="KO">KO</option>
+                <option value="EN">EN</option>
+                <option value="JP">JP</option>
+                <option value="CN">CN</option>
+                <option value="ES">ES</option>
+                <option value="DE">DE</option>
+                <option value="HI">HI</option>
               </select>
 
               {/* ✅ 헬스체크 버튼 */}
               <button
                 onClick={checkEngineHealth}
                 disabled={healthStatus === 'checking'}
-                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all border ${
+                className={`w-6 h-6 rounded-full flex items-center justify-center transition-all border text-[10px] ${
                   healthStatus === 'ok' ? 'bg-green-100 border-green-500 text-green-600' :
                   healthStatus === 'error' ? 'bg-red-100 border-red-500 text-red-600' :
-                  'bg-gray-100 border-gray-200 text-gray-400 hover:border-gray-400'
+                  'bg-gray-100 border-gray-200 text-gray-400'
                 }`}
                 title="엔진 연결 확인"
               >
                 {healthStatus === 'checking' ? (
-                  <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-2 h-2 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
                 ) : healthStatus === 'ok' ? '✓' : healthStatus === 'error' ? '!' : '?' }
               </button>
 
               <button
                 onClick={() => setIsDashboardOpen(true)}
-                className="bg-gray-800 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-full text-xs font-bold hover:bg-black transition-all flex items-center gap-1"
+                className="bg-gray-800 text-white p-2 rounded-full text-xs font-bold hover:bg-black transition-all"
                 title={t('strategyDashboard')}
               >
                 <LayoutDashboard className="w-4 h-4" />
-                <span className="hidden xl:inline">{t('strategyDashboard')}</span>
               </button>
 
               {/* ✅ 엔진 버튼 추가 (강제 갱신) */}
               <button
                 onClick={() => callBibleEngine('today', true)}
                 disabled={isEngineLoading}
-                className={`px-3 py-2 lg:px-4 lg:py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
+                className={`p-2 rounded-full text-xs font-bold transition-all ${
                   isEngineLoading ? 'bg-gray-300 text-gray-700' : 'bg-[#2E5E4E] text-white hover:bg-[#244a3c]'
                 }`}
                 title={t('todayEngineGenerate')}
               >
                 <RefreshCw className={`w-4 h-4 ${isEngineLoading ? 'animate-spin' : ''}`} />
-                <span className="hidden xl:inline">{isEngineLoading ? t('generating') : t('todayEngineGenerate')}</span>
               </button>
 
               <button
                 onClick={() => setIsLabOpen(!isLabOpen)}
-                className="bg-[#5D6D5F] text-white px-3 py-2 lg:px-4 lg:py-2 rounded-full text-xs font-bold hover:bg-[#4a574c] transition-all flex items-center gap-1"
+                className="bg-[#5D6D5F] text-white p-2 rounded-full text-xs font-bold hover:bg-[#4a574c] transition-all"
                 title={t('aiLab')}
               >
                 <Sparkles className="w-4 h-4" />
-                <span className="hidden xl:inline">{t('aiLab')}</span>
               </button>
 
               <button
                 onClick={() => setIsAdminOpen(true)}
-                className="bg-red-600 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-full text-xs font-bold hover:bg-red-700 flex items-center gap-1"
+                className="bg-red-600 text-white p-2 rounded-full text-xs font-bold hover:bg-red-700"
                 title={t('admin')}
               >
                 <Settings className="w-4 h-4" />
-                <span className="hidden xl:inline">{t('admin')}</span>
               </button>
             </div>
           </div>
@@ -812,7 +902,7 @@ export default function App() {
                               // ✅ 검색 모드 오디오 미지원 정책에 따라 audioUrl 저장 안함
                             }
                           }));
-                          alert(t('savedAlert'));
+                          showAlert(t('savedAlert'));
                         }}
                         className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-full hover:bg-emerald-700 transition-all"
                       >
@@ -881,6 +971,7 @@ export default function App() {
                         className="w-full h-10" 
                         key={engineAudio}
                         preload="metadata"
+                        referrerPolicy="no-referrer"
                         ref={(el) => {
                           if (el) el.playbackRate = playbackRate;
                         }}
@@ -894,6 +985,13 @@ export default function App() {
                           console.error("❌ Audio Load Failed!");
                           console.error("Target ID:", engineData?.id);
                           console.error("Target URL:", engineAudio);
+                          
+                          // 자동 복구 시도 (한 번만)
+                          if (engineData?.id && !hasAutoRepaired[engineData.id]) {
+                            console.log("🔄 Auto-repairing audio...");
+                            setHasAutoRepaired(prev => ({ ...prev, [engineData.id]: true }));
+                            repairAudio();
+                          }
                         }}
                       />
                       {audioStatus === 'error' && (
@@ -938,6 +1036,14 @@ export default function App() {
           <p className="text-xs text-gray-400 mt-2">{t('footerCopyright')}</p>
         </div>
       </footer>
+      <DialogModal
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        onConfirm={dialogConfig.onConfirm}
+        onCancel={dialogConfig.onCancel}
+      />
     </div>
   );
 }

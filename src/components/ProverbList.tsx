@@ -11,7 +11,9 @@ export default function ProverbList({ proverbs, onSelectVerse, lang = 'KO' }: Pr
     <div className="absolute top-16 left-0 right-0 bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-lg z-40 max-h-[50vh] overflow-y-auto animate-fade-in-down">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <ul className="space-y-2">
-          {Object.entries(proverbs).map(([key, proverb]) => {
+          {Object.entries(proverbs)
+            .filter(([_, proverb]) => proverb.title && proverb.commentary && !proverb.verse.includes('말씀입니다.'))
+            .map(([key, proverb]) => {
             const tr = proverb.translations?.[lang] ?? proverb.translations?.KO ?? {};
             const displayTitle = tr?.devotion?.title ?? tr?.dry?.title ?? proverb.title ?? '';
             return (
@@ -20,8 +22,15 @@ export default function ProverbList({ proverbs, onSelectVerse, lang = 'KO' }: Pr
                   onClick={() => onSelectVerse(key)}
                   className="w-full text-left p-3 rounded-lg hover:bg-gray-100 transition-colors duration-200"
                 >
-                  <p className="font-bold text-sm text-[#5D6D5F]">{proverb.reference}</p>
-                  <p className="text-xs text-gray-600 mt-1">{displayTitle}</p>
+                  <div className="flex justify-between items-start mb-1">
+                    <p className="font-bold text-sm text-[#5D6D5F]">{tr?.reference ?? proverb.reference}</p>
+                    {proverb.tag && (
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-bold whitespace-nowrap">
+                        #{proverb.tag}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed">{tr?.verse ?? proverb.verse}</p>
                 </button>
               </li>
             );

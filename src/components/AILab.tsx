@@ -4,6 +4,7 @@ import { Modality } from "@google/genai";
 import { ProverbData } from '../data/proverbs';
 import { getUIText } from '../i18n/uiTexts';
 import { Download, FileText, Image as ImageIcon, Music } from 'lucide-react';
+import DialogModal from './DialogModal';
 
 interface AILabProps {
   verseData: ProverbData | null;
@@ -24,6 +25,45 @@ export default function AILab({ verseData, isOpen, onClose, lang = 'KO' }: AILab
   const [loadingArt, setLoadingArt] = useState(false);
   const [loadingTTS, setLoadingTTS] = useState(false);
   const [lastAudioUrl, setLastAudioUrl] = useState<string | null>(null);
+
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'alert' | 'confirm';
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'alert',
+    onConfirm: () => {},
+  });
+
+  const showAlert = (message: string, title = '알림') => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'alert',
+      onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false })),
+    });
+  };
+
+  const showConfirm = (message: string, onConfirm: () => void, title = '확인') => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'confirm',
+      onConfirm: () => {
+        setDialogConfig(prev => ({ ...prev, isOpen: false }));
+        onConfirm();
+      },
+      onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false })),
+    });
+  };
 
   if (!isOpen || !verseData) return null;
 
@@ -184,34 +224,75 @@ export default function AILab({ verseData, isOpen, onClose, lang = 'KO' }: AILab
     setLoadingTTS(true);
 
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say warmly: ${aiResponse.slice(0, 500)}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: "Kore" }
+      // 텍스트를 문장 단위로 분리하여 청크 생성 (최대 400자)
+      const sentences = aiResponse.match(/[^.!?\n]+[.!?\n]+/g) || [aiResponse];
+      const chunks: string[] = [];
+      let currentChunk = "";
+
+      for (const sentence of sentences) {
+        if (currentChunk.length + sentence.length > 400) {
+          if (currentChunk) chunks.push(currentChunk.trim());
+          currentChunk = sentence;
+        } else {
+          currentChunk += sentence;
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk.trim());
+
+      const pcmBuffers: ArrayBuffer[] = [];
+
+      for (const chunk of chunks) {
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash-preview-tts",
+          contents: [{ parts: [{ text: `Say warmly: ${chunk}` }] }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: "Kore" }
+              }
             }
           }
-        }
-      });
+        });
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const audioUrl = playPCM(base64Audio);
-        setLastAudioUrl(audioUrl);
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+          const binary = atob(base64Audio);
+          const array = new Uint8Array(binary.length);
+          for(let i=0; i<binary.length; i++) array[i] = binary.charCodeAt(i);
+          pcmBuffers.push(array.buffer);
+        }
+      }
+
+      if (pcmBuffers.length > 0) {
+        // PCM 버퍼 병합
+        const totalLength = pcmBuffers.reduce((acc, buf) => acc + buf.byteLength, 0);
+        const mergedBuffer = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const buf of pcmBuffers) {
+          mergedBuffer.set(new Uint8Array(buf), offset);
+          offset += buf.byteLength;
+        }
+
+        const wav = createWav(mergedBuffer.buffer, 24000);
+        const blob = new Blob([wav], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        
+        setLastAudioUrl(url);
+        const audio = new Audio(url);
+        audio.play();
         
         saveAIHistory({
           type: 'counseling',
           title: `TTS - ${verseData.reference}`,
           response: aiResponse.slice(0, 100) + '...',
-          audioUrl: audioUrl,
+          audioUrl: url,
           verseRef: verseData.reference
         });
       }
     } catch (error) {
       console.error(error);
+      showAlert("음성 생성 중 오류가 발생했습니다.");
     } finally {
       setLoadingTTS(false);
     }
@@ -416,6 +497,14 @@ ${aiResponse}`;
           </div>
         )}
       </div>
+      <DialogModal
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        onConfirm={dialogConfig.onConfirm}
+        onCancel={dialogConfig.onCancel}
+      />
     </section>
   );
 }

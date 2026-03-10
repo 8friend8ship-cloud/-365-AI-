@@ -68,6 +68,12 @@ export const clearAIHistory = () => {
   localStorage.removeItem(HISTORY_KEY);
 };
 
+export const deleteAIHistoryItem = (id: string) => {
+  const history = getAIHistory();
+  const newHistory = history.filter(item => item.id !== id);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
+};
+
 export const translateEngineFields = async (situation: string, bibleRef: string, bibleText: string, targetLang: string) => {
   const ai = getAI();
   if (!ai) return null;

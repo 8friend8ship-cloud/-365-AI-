@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Key, Shield, CheckCircle2, AlertCircle, RefreshCw, Lock, Download } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { getUIText } from '../i18n/uiTexts';
+import DialogModal from './DialogModal';
 
 interface KeyManagementModalProps {
   isOpen: boolean;
@@ -44,6 +45,45 @@ export default function KeyManagementModal({ isOpen, onClose, lang }: KeyManagem
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
 
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'alert' | 'confirm';
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'alert',
+    onConfirm: () => {},
+  });
+
+  const showAlert = (message: string, title = '알림') => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'alert',
+      onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false })),
+    });
+  };
+
+  const showConfirm = (message: string, onConfirm: () => void, title = '확인') => {
+    setDialogConfig({
+      isOpen: true,
+      title,
+      message,
+      type: 'confirm',
+      onConfirm: () => {
+        setDialogConfig(prev => ({ ...prev, isOpen: false }));
+        onConfirm();
+      },
+      onCancel: () => setDialogConfig(prev => ({ ...prev, isOpen: false })),
+    });
+  };
+
   useEffect(() => {
     if (isOpen) {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -61,13 +101,13 @@ export default function KeyManagementModal({ isOpen, onClose, lang }: KeyManagem
 
   const handleSave = () => {
     if (!geminiKey.trim()) {
-      alert("API 키를 입력해주세요.");
+      showAlert("API 키를 입력해주세요.");
       return;
     }
     const encrypted = encrypt(geminiKey, APP_SALT);
     localStorage.setItem(STORAGE_KEY, encrypted);
     setIsSaved(true);
-    alert("API 키가 암호화되어 로컬 저장소에 저장되었습니다.");
+    showAlert("API 키가 암호화되어 로컬 저장소에 저장되었습니다.");
   };
 
   const handleTest = async () => {
@@ -104,12 +144,12 @@ export default function KeyManagementModal({ isOpen, onClose, lang }: KeyManagem
   };
 
   const handleClear = () => {
-    if (window.confirm("저장된 API 키를 삭제하시겠습니까?")) {
+    showConfirm("저장된 API 키를 삭제하시겠습니까?", () => {
       localStorage.removeItem(STORAGE_KEY);
       setGeminiKey('');
       setIsSaved(false);
       setTestResult(null);
-    }
+    });
   };
 
   return (
@@ -200,6 +240,14 @@ export default function KeyManagementModal({ isOpen, onClose, lang }: KeyManagem
           </p>
         </div>
       </div>
+      <DialogModal
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        onConfirm={dialogConfig.onConfirm}
+        onCancel={dialogConfig.onCancel}
+      />
     </div>
   );
 }
